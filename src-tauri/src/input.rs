@@ -1,16 +1,24 @@
 use enigo::{Enigo, Key, Keyboard, Mouse, Settings};
+use log::warn;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
 /// Wrapper for Enigo to store in Tauri's managed state.
 /// Enigo is wrapped in a Mutex since it requires mutable access.
-pub struct EnigoState(pub Mutex<Enigo>);
+pub struct EnigoState(pub Mutex<Option<Enigo>>);
 
 impl EnigoState {
-    pub fn new() -> Result<Self, String> {
-        let enigo = Enigo::new(&Settings::default())
-            .map_err(|e| format!("Failed to initialize Enigo: {}", e))?;
-        Ok(Self(Mutex::new(enigo)))
+    pub fn new() -> Self {
+        match Enigo::new(&Settings::default()) {
+            Ok(enigo) => Self(Mutex::new(Some(enigo))),
+            Err(e) => {
+                warn!(
+                    "Failed to initialize Enigo: {}. Input simulation will be unavailable.",
+                    e
+                );
+                Self(Mutex::new(None))
+            }
+        }
     }
 }
 
@@ -18,8 +26,8 @@ impl EnigoState {
 /// Returns None if the state is not available or if getting the location fails.
 pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
     let enigo_state = app_handle.try_state::<EnigoState>()?;
-    let enigo = enigo_state.0.lock().ok()?;
-    enigo.location().ok()
+    let mut enigo = enigo_state.0.lock().ok()?;
+    enigo.as_mut()?.location().ok()
 }
 
 /// Sends a Ctrl+V or Cmd+V paste command using platform-specific virtual key codes.

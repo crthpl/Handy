@@ -3,6 +3,9 @@ use log::debug;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
 use serde::{Deserialize, Serialize};
 
+const THINK_OPEN: &str = "<think>";
+const THINK_CLOSE: &str = "</think>";
+
 #[derive(Debug, Serialize)]
 struct ChatMessage {
     role: String,
@@ -28,6 +31,28 @@ struct ChatChoice {
 #[derive(Debug, Deserialize)]
 struct ChatMessageResponse {
     content: Option<String>,
+}
+
+fn strip_think_tags(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut rest = input;
+
+    loop {
+        let Some(start) = rest.find(THINK_OPEN) else {
+            output.push_str(rest);
+            return output;
+        };
+
+        let (before, after_start) = rest.split_at(start);
+        output.push_str(before);
+        let after_start = &after_start[THINK_OPEN.len()..];
+
+        if let Some(end) = after_start.find(THINK_CLOSE) {
+            rest = &after_start[end + THINK_CLOSE.len()..];
+        } else {
+            return output;
+        }
+    }
 }
 
 /// Build headers for API requests based on provider type
@@ -127,7 +152,8 @@ pub async fn send_chat_completion(
     Ok(completion
         .choices
         .first()
-        .and_then(|choice| choice.message.content.clone()))
+        .and_then(|choice| choice.message.content.as_ref())
+        .map(|content| strip_think_tags(content).trim().to_string()))
 }
 
 /// Fetch available models from an OpenAI-compatible API
